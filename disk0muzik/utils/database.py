@@ -81,9 +81,9 @@ def get_song(spotify_id: str) -> Optional[Dict[str, str]]:
                         "spotify_id": row[0],
                         "title": row[1],
                         "artist": row[2],
-                        "youtube_url": row[3],
-                        "requester": row[4],
-                        "thumbnail": row[5],
+                        "thumbnail": row[3],
+                        "youtube_url": row[4],
+                        "requester": row[5],
                     }
         finally:
             conn.close()
@@ -102,9 +102,9 @@ def get_random_song() -> Optional[Dict[str, str]]:
                         "spotify_id": row[0],
                         "title": row[1],
                         "artist": row[2],
-                        "youtube_url": row[3],
-                        "requester": row[4],
-                        "thumbnail": row[5],
+                        "thumbnail": row[3],
+                        "youtube_url": row[4],
+                        "requester": row[5],
                     }
         finally:
             conn.close()
