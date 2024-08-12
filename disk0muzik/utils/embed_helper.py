@@ -2,43 +2,40 @@ import discord
 from discord.ui import Button, View
 from typing import Tuple, Dict
 
+# Constants
 BLANK_CHAR = "\u2003\u2800"
+DEFAULT_THUMBNAIL_URL = "https://example.com/default_thumbnail.png"
 
 # Footer images
-NOW_PLAYING_FOOTER_IMAGE = "https://i.ibb.co/yP0591q/nowp5.gif"
-PAUSED_FOOTER_IMAGE = "https://i.ibb.co/2KtfHmw/pause-button.png"
-QUEUED_FOOTER_IMAGE = "https://i.ibb.co/m937VW1/add.png"
-PLAYED_FOOTER_IMAGE = "https://i.ibb.co/9Wc3xNw/check.png"
+FOOTER_IMAGES = {
+    "now_playing": "https://i.ibb.co/yP0591q/nowp5.gif",
+    "paused": "https://i.ibb.co/2KtfHmw/pause-button.png",
+    "queued": "https://i.ibb.co/m937VW1/add.png",
+    "played": "https://i.ibb.co/9Wc3xNw/check.png",
+}
 
 # Embed colors
-COLOR_NOW_PLAYING = 0x1DB954  # Green
-COLOR_PAUSED = 0xFFA500  # Rich orange
-COLOR_QUEUED = 0xFFFFFF  # White
-COLOR_PLAYED = 0x000000  # Black
+EMBED_COLORS = {
+    "now_playing": 0x1DB954,  # Green
+    "paused": 0xFFA500,  # Rich orange
+    "queued": 0xFFFFFF,  # White
+    "played": 0x000000,  # Black
+}
 
 
 def create_embed(
-    description: str,
-    thumbnail_url: str,
-    footer_text: str,
-    footer_icon_url: str,
-    color: int,
+    description: str, thumbnail_url: str, footer_text: str, footer_type: str
 ) -> discord.Embed:
-    embed = discord.Embed(description=description, color=color)
-    embed.set_thumbnail(url=thumbnail_url)
-    embed.set_footer(text=footer_text, icon_url=footer_icon_url)
+    embed = discord.Embed(description=description, color=EMBED_COLORS[footer_type])
+    embed.set_thumbnail(url=thumbnail_url or DEFAULT_THUMBNAIL_URL)
+    embed.set_footer(text=footer_text, icon_url=FOOTER_IMAGES[footer_type])
     return embed
 
 
 def create_button(
     label: str, style: discord.ButtonStyle, custom_id: str, disabled: bool = False
 ) -> Button:
-    return Button(
-        label=label,
-        style=style,
-        custom_id=custom_id,
-        disabled=disabled,
-    )
+    return Button(label=label, style=style, custom_id=custom_id, disabled=disabled)
 
 
 def create_description(song: Dict[str, str]) -> str:
@@ -50,13 +47,7 @@ def create_now_playing_embed(
 ) -> Tuple[discord.Embed, View]:
     description = create_description(song)
     footer_text = f"Now Playing\u2800•\u2800@{requester}"
-    embed = create_embed(
-        description,
-        song.get("thumbnail", "default_thumbnail_url"),
-        footer_text,
-        NOW_PLAYING_FOOTER_IMAGE,
-        color=COLOR_NOW_PLAYING,
-    )
+    embed = create_embed(description, song.get("thumbnail"), footer_text, "now_playing")
 
     view = View()
     view.add_item(
@@ -65,14 +56,6 @@ def create_now_playing_embed(
         )
     )
     view.add_item(create_button("▶▶", discord.ButtonStyle.primary, "skip_button"))
-    view.add_item(
-        create_button(
-            f"{BLANK_CHAR * 15}\u2800",
-            discord.ButtonStyle.secondary,
-            "placeholder",
-            True,
-        )
-    )
     return embed, view
 
 
@@ -81,25 +64,11 @@ def create_paused_embed(
 ) -> Tuple[discord.Embed, View]:
     description = create_description(song)
     footer_text = f"Paused\u2800•\u2800@{requester}"
-    embed = create_embed(
-        description,
-        song.get("thumbnail", "default_thumbnail_url"),
-        footer_text,
-        PAUSED_FOOTER_IMAGE,
-        color=COLOR_PAUSED,
-    )
+    embed = create_embed(description, song.get("thumbnail"), footer_text, "paused")
 
     view = View()
     view.add_item(create_button("▶", discord.ButtonStyle.primary, "play_pause_button"))
     view.add_item(create_button("▶▶", discord.ButtonStyle.primary, "skip_button"))
-    view.add_item(
-        create_button(
-            f"{BLANK_CHAR * 15}\u2800",
-            discord.ButtonStyle.secondary,
-            "placeholder",
-            True,
-        )
-    )
     return embed, view
 
 
@@ -108,13 +77,7 @@ def create_queued_embed(
 ) -> Tuple[discord.Embed, View]:
     description = create_description(song)
     footer_text = f"Queued\u2800•\u2800@{requester}"
-    embed = create_embed(
-        description,
-        song.get("thumbnail", "default_thumbnail_url"),
-        footer_text,
-        QUEUED_FOOTER_IMAGE,
-        color=COLOR_QUEUED,
-    )
+    embed = create_embed(description, song.get("thumbnail"), footer_text, "queued")
 
     view = View()
     return embed, view
@@ -123,10 +86,4 @@ def create_queued_embed(
 def create_played_embed(song: Dict[str, str], requester: str) -> discord.Embed:
     description = create_description(song)
     footer_text = f"Played\u2800•\u2800@{requester}"
-    return create_embed(
-        description,
-        song.get("thumbnail", "default_thumbnail_url"),
-        footer_text,
-        PLAYED_FOOTER_IMAGE,
-        color=COLOR_PLAYED,
-    )
+    return create_embed(description, song.get("thumbnail"), footer_text, "played")

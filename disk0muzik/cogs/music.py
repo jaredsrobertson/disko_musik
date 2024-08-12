@@ -35,51 +35,39 @@ class Music(commands.Cog):
         logger.info("Music cog initialized.")
 
     def get_guild_state(self, guild_id: int) -> GuildMusicState:
-        if guild_id not in self.guild_states:
-            self.guild_states[guild_id] = GuildMusicState()
-        return self.guild_states[guild_id]
+        return self.guild_states.setdefault(guild_id, GuildMusicState())
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message) -> None:
-        if message.author == self.bot.user:
-            return
-
-        if message.content.startswith("."):
+        if message.author != self.bot.user and message.content.startswith("."):
             query = message.content[1:].strip()
             logger.info(f"Processing song request: {query}")
-            try:
-                await message.delete()
-            except Exception as e:
-                logger.error(f"Failed to delete message: {e}")
             await self.handle_song_request(message, query)
+            await message.delete()
 
     async def join_voice_channel(
         self, message: discord.Message, guild_state: GuildMusicState
     ) -> None:
-        if not message.author.voice:
+        if message.author.voice:
+            channel = message.author.voice.channel
+            guild_state.voice_client = await channel.connect()
+            logger.info(f"Joined voice channel: {channel}")
+        else:
             await message.channel.send(
                 "You need to be in a voice channel to request a song."
             )
             logger.warning("User is not in a voice channel.")
-            return
-
-        channel = message.author.voice.channel
-        guild_state.voice_client = await channel.connect()
-        logger.info(f"Joined voice channel: {channel}")
 
     async def handle_song_request(self, message: discord.Message, query: str) -> None:
-        guild_id = message.guild.id
-        guild_state = self.get_guild_state(guild_id)
+        guild_state = self.get_guild_state(message.guild.id)
 
         try:
-            # Join the voice channel if not already connected
             if (
                 guild_state.voice_client is None
                 or not guild_state.voice_client.is_connected()
             ):
                 await self.join_voice_channel(message, guild_state)
 
-            # Process the song request
             song = await self.process_song_query(query, message.author.display_name)
 
             if not song:
@@ -88,8 +76,6 @@ class Music(commands.Cog):
                 )
                 return
 
-            # Determine whether to queue the song or play it immediately
-            play_immediately = False
             async with guild_state.lock:
                 if (
                     guild_state.current_song
@@ -100,10 +86,11 @@ class Music(commands.Cog):
                     embed, view = create_queued_embed(song, song["requester"])
                     song["message"] = await message.channel.send(embed=embed, view=view)
                     logger.info(f"Queued song: {song['title']}")
+                    play_immediately = False
                 else:
                     play_immediately = True
 
-            # Play the song if no other song is currently playing
+            # Call play_song outside the lock
             if play_immediately:
                 await self.play_song(message.channel, song, guild_state)
 
@@ -118,17 +105,14 @@ class Music(commands.Cog):
     ) -> Optional[Dict[str, str]]:
         try:
             if "youtube.com" in query or "youtu.be" in query:
-                logger.info(f"Processing YouTube URL: {query}")
                 video_info = await asyncio.to_thread(extract_youtube_info, query)
                 if not video_info:
-                    logger.error("Couldn't extract video info from YouTube URL.")
                     return None
 
                 spotify_result = await asyncio.to_thread(
                     search_spotify, video_info["title"]
                 )
                 if not spotify_result:
-                    logger.error("Couldn't find the song on Spotify.")
                     return None
 
                 song = {
@@ -140,10 +124,8 @@ class Music(commands.Cog):
                     "requester": requester,
                 }
             else:
-                logger.info(f"Searching Spotify for query: {query}")
                 spotify_result = await asyncio.to_thread(search_spotify, query)
                 if not spotify_result:
-                    logger.error("Couldn't find the song on Spotify.")
                     return None
 
                 youtube_info = await asyncio.to_thread(
@@ -151,7 +133,6 @@ class Music(commands.Cog):
                     f"{spotify_result['artist']} {spotify_result['title']}",
                 )
                 if not youtube_info:
-                    logger.error("Couldn't find the song on YouTube.")
                     return None
 
                 song = {
@@ -175,10 +156,6 @@ class Music(commands.Cog):
         song: Dict[str, str],
         guild_state: GuildMusicState,
     ) -> None:
-        if song is None:
-            logger.error("Cannot play an undefined song.")
-            return
-
         guild_state.current_song = song
         guild_state.is_paused = False
         guild_state.skip_event.clear()
@@ -194,7 +171,6 @@ class Music(commands.Cog):
                 extract_youtube_info, song["youtube_url"]
             )
             audio_url = video_info["audio_url"]
-            logger.info(f"Audio URL: {audio_url}")
 
             guild_state.voice_client.play(
                 FFmpegPCMAudio(audio_url, **FFMPEG_OPTIONS),
@@ -202,6 +178,7 @@ class Music(commands.Cog):
                     guild_state.skip_event.set
                 ),
             )
+
             embed, view = create_now_playing_embed(song, song["requester"], "❚❚")
             guild_state.now_playing_message = await (
                 song.get("message").edit(embed=embed, view=view)
@@ -209,6 +186,7 @@ class Music(commands.Cog):
                 else channel.send(embed=embed, view=view)
             )
             song["message"] = guild_state.now_playing_message
+
         except Exception as e:
             logger.error(f"Error playing song: {e}")
             await channel.send("An error occurred while playing the song.")
@@ -246,11 +224,11 @@ class Music(commands.Cog):
                 await self.play_song(channel, db_song, guild_state)
 
     async def handle_button_click(self, interaction: discord.Interaction) -> None:
-        guild_id = interaction.guild_id
-        guild_state = self.get_guild_state(guild_id)
+        guild_state = self.get_guild_state(interaction.guild_id)
 
         button_id = interaction.data.get("custom_id")
         logger.info(f"Button clicked: {button_id}")
+
         if guild_state.current_song and button_id == "play_pause_button":
             if guild_state.voice_client.is_playing():
                 guild_state.voice_client.pause()
@@ -279,7 +257,6 @@ class Music(commands.Cog):
 
     @commands.Cog.listener()
     async def on_interaction(self, interaction: discord.Interaction) -> None:
-        logger.info(f"Interaction received: {interaction.data.get('custom_id')}")
         if interaction.type == discord.InteractionType.component:
             await interaction.response.defer()
             await self.handle_button_click(interaction)
