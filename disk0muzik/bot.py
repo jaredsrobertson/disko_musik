@@ -20,14 +20,18 @@ async def on_ready() -> None:
     logger.info(f"Logged in as {bot.user.name}")
 
 
-async def load_extensions() -> None:
-    initial_extensions = ["cogs.music"]
-    for extension in initial_extensions:
-        await bot.load_extension(extension)
+async def load_cogs() -> None:
+    # Explicitly load the single cog
+    cog_name = "cogs.music"  # Replace "music" with the actual cog name if different
+    try:
+        await bot.load_extension(cog_name)
+        logger.info(f"Loaded cog: {cog_name}")
+    except Exception as e:
+        logger.error(f"Failed to load cog {cog_name}: {e}")
 
 
 async def main() -> None:
-    await load_extensions()
+    await load_cogs()  # Load the cog before starting the bot
     await bot.start(DISCORD_TOKEN)
 
 
