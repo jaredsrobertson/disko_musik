@@ -3,8 +3,8 @@ import logging
 import asyncio
 from discord.ext import commands
 from disk0muzik.config import DISCORD_TOKEN
+from disk0muzik.utils.interaction_handler import skip_song
 
-# Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -20,9 +20,34 @@ async def on_ready() -> None:
     logger.info(f"Logged in as {bot.user.name}")
 
 
+@bot.command()
+async def force_skip(ctx: commands.Context) -> None:
+    """Force skip the current song without user or vote checks. For production testing only."""
+    try:
+        await ctx.message.delete()
+    except discord.Forbidden:
+        logger.warning(
+            "Failed to delete the force_skip command message due to permissions."
+        )
+    except discord.HTTPException as e:
+        logger.error(f"Failed to delete the force_skip command message: {e}")
+
+    music_cog = bot.get_cog("Music")
+    if music_cog is None:
+        await ctx.send("Music cog is not loaded.")
+        return
+
+    guild_state = music_cog.get_guild_state(ctx.guild.id)
+
+    if guild_state and guild_state.voice_client and guild_state.current_song:
+        logger.info("Force skipping the current song.")
+        await skip_song(guild_state)
+    else:
+        await ctx.send("No song is currently playing.")
+
+
 async def load_cogs() -> None:
-    # Explicitly load the single cog
-    cog_name = "cogs.music"  # Replace "music" with the actual cog name if different
+    cog_name = "cogs.music"
     try:
         await bot.load_extension(cog_name)
         logger.info(f"Loaded cog: {cog_name}")
@@ -31,7 +56,7 @@ async def load_cogs() -> None:
 
 
 async def main() -> None:
-    await load_cogs()  # Load the cog before starting the bot
+    await load_cogs()
     await bot.start(DISCORD_TOKEN)
 
 

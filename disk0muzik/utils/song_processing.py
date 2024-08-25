@@ -6,8 +6,17 @@ from disk0muzik.utils.yt_dlp_helper import extract_youtube_info
 
 logger = logging.getLogger(__name__)
 
+async def process_song_query(
+    query: str, requester: str, requester_id: int
+) -> Optional[Dict[str, str]]:
+    """
+    Processes a song query by searching Spotify and YouTube, and returns song details.
 
-async def process_song_query(query: str, requester: str) -> Optional[Dict[str, str]]:
+    :param query: The query string to search for the song.
+    :param requester: The name of the user requesting the song.
+    :param requester_id: The ID of the user requesting the song.
+    :return: A dictionary containing song details or None if the song could not be found.
+    """
     try:
         if "youtube.com" in query or "youtu.be" in query:
             logger.info(f"Processing YouTube URL: {query}")
@@ -16,9 +25,7 @@ async def process_song_query(query: str, requester: str) -> Optional[Dict[str, s
                 logger.error("Couldn't extract video info from YouTube URL.")
                 return None
 
-            spotify_result = await asyncio.to_thread(
-                search_spotify, video_info["title"]
-            )
+            spotify_result = await asyncio.to_thread(search_spotify, video_info["title"])
             if not spotify_result:
                 logger.error("Couldn't find the song on Spotify.")
                 return None
@@ -30,6 +37,7 @@ async def process_song_query(query: str, requester: str) -> Optional[Dict[str, s
                 "thumbnail": spotify_result["album_art"],
                 "youtube_url": video_info["video_url"],
                 "requester": requester,
+                "requester_id": requester_id,
             }
         else:
             logger.info(f"Searching Spotify for query: {query}")
@@ -53,6 +61,7 @@ async def process_song_query(query: str, requester: str) -> Optional[Dict[str, s
                 "thumbnail": spotify_result["album_art"],
                 "youtube_url": youtube_info["video_url"],
                 "requester": requester,
+                "requester_id": requester_id,
             }
 
         return song
