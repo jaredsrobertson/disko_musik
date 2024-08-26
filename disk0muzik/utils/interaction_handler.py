@@ -7,14 +7,16 @@ logger = logging.getLogger(__name__)
 SKIP_EMOJI = "⏩"
 PAUSE_EMOJI = "⏸️"
 
+
 async def handle_button_click(
     interaction: discord.Interaction, get_guild_state
 ) -> None:
     """
-    Handles button clicks for play/pause and skip actions, managing votes and reactions.
+    Handles button click interactions for skip and pause buttons.
 
-    :param interaction: The interaction object representing the button click.
-    :param get_guild_state: A function to retrieve the current guild's music state.
+    Args:
+        interaction (discord.Interaction): The interaction triggered by the button click.
+        get_guild_state (function): A function that retrieves the guild's music state.
     """
     guild_id = interaction.guild_id
     user_id = interaction.user.id
@@ -26,11 +28,20 @@ async def handle_button_click(
     if guild_state.current_song:
         requester_id = guild_state.current_song.get("requester_id")
 
+        # Determine the number of users in the voice channel excluding the bot
+        voice_channel = guild_state.voice_client.channel
+        user_count = (
+            len([member for member in voice_channel.members if not member.bot])
+            if voice_channel
+            else 0
+        )
+        required_votes = 2 if user_count > 1 else 1
+
         if button_id == "play_pause_button":
             if user_id == requester_id:
                 await toggle_pause(guild_state)
             else:
-                vote_passed = guild_state.add_pause_vote(user_id)
+                vote_passed = guild_state.add_pause_vote(user_id, required_votes)
                 if vote_passed:
                     await toggle_pause(guild_state)
                 else:
@@ -44,7 +55,7 @@ async def handle_button_click(
             if user_id == requester_id:
                 await skip_song(guild_state)
             else:
-                vote_passed = guild_state.add_skip_vote(user_id)
+                vote_passed = guild_state.add_skip_vote(user_id, required_votes)
                 if vote_passed:
                     await skip_song(guild_state)
                 else:
@@ -57,9 +68,10 @@ async def handle_button_click(
 
 async def toggle_pause(guild_state) -> None:
     """
-    Toggles the pause state of the currently playing song.
+    Toggles the pause state of the current song.
 
-    :param guild_state: The current guild's music state.
+    Args:
+        guild_state (GuildMusicState): The current guild's music state.
     """
     if guild_state.voice_client.is_playing():
         guild_state.voice_client.pause()
@@ -79,30 +91,32 @@ async def toggle_pause(guild_state) -> None:
         )
         await guild_state.now_playing_message.edit(embed=embed, view=view)
         logger.info("Resumed song.")
-    guild_state.reset_votes()
+    guild_state.reset_votes()  # Reset votes after action is taken
 
 
 async def skip_song(guild_state) -> None:
     """
-    Skips the currently playing song.
+    Skips the current song.
 
-    :param guild_state: The current guild's music state.
+    Args:
+        guild_state (GuildMusicState): The current guild's music state.
     """
     if guild_state.voice_client.is_playing() or guild_state.is_paused:
         guild_state.voice_client.stop()
         guild_state.is_paused = False
         guild_state.skip_event.set()
         logger.info("Skipped song.")
-    guild_state.reset_votes()
+    guild_state.reset_votes()  # Reset votes after action is taken
 
 
 async def add_reaction(message: discord.Message, emoji: str, count: int) -> None:
     """
     Adds or updates a reaction with the vote count.
 
-    :param message: The message to which the reaction should be added.
-    :param emoji: The emoji representing the reaction.
-    :param count: The number of votes to be represented by the reaction.
+    Args:
+        message (discord.Message): The message to add the reaction to.
+        emoji (str): The emoji to use for the reaction.
+        count (int): The number of votes to display.
     """
     for reaction in message.reactions:
         if reaction.emoji == emoji:
@@ -115,10 +129,11 @@ async def add_reaction(message: discord.Message, emoji: str, count: int) -> None
 
 async def on_interaction(interaction: discord.Interaction, get_guild_state) -> None:
     """
-    Handles interactions, specifically button clicks, and delegates to the appropriate handler.
+    Handles interactions for buttons in embeds.
 
-    :param interaction: The interaction object representing the event.
-    :param get_guild_state: A function to retrieve the current guild's music state.
+    Args:
+        interaction (discord.Interaction): The interaction received.
+        get_guild_state (function): A function that retrieves the guild's music state.
     """
     logger.info(f"Interaction received: {interaction.data.get('custom_id')}")
     if interaction.type == discord.InteractionType.component:
