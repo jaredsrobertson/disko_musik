@@ -28,7 +28,6 @@ async def handle_button_click(
     if guild_state.current_song:
         requester_id = guild_state.current_song.get("requester_id")
 
-        # Determine the number of users in the voice channel excluding the bot
         voice_channel = guild_state.voice_client.channel
         user_count = (
             len([member for member in voice_channel.members if not member.bot])
@@ -91,7 +90,7 @@ async def toggle_pause(guild_state) -> None:
         )
         await guild_state.now_playing_message.edit(embed=embed, view=view)
         logger.info("Resumed song.")
-    guild_state.reset_votes()  # Reset votes after action is taken
+    guild_state.reset_votes()
 
 
 async def skip_song(guild_state) -> None:
@@ -101,12 +100,18 @@ async def skip_song(guild_state) -> None:
     Args:
         guild_state (GuildMusicState): The current guild's music state.
     """
-    if guild_state.voice_client.is_playing() or guild_state.is_paused:
-        guild_state.voice_client.stop()
+    try:
+        if guild_state.voice_client.is_playing() or guild_state.is_paused:
+            guild_state.voice_client.stop()
+    except Exception as e:
+        logger.error(f"Error occurred while trying to stop the voice client: {e}")    
+    else:    
         guild_state.is_paused = False
         guild_state.skip_event.set()
         logger.info("Skipped song.")
-    guild_state.reset_votes()  # Reset votes after action is taken
+    finally:    
+        guild_state.reset_votes()
+
 
 
 async def add_reaction(message: discord.Message, emoji: str, count: int) -> None:
@@ -129,13 +134,16 @@ async def add_reaction(message: discord.Message, emoji: str, count: int) -> None
 
 async def on_interaction(interaction: discord.Interaction, get_guild_state) -> None:
     """
-    Handles interactions for buttons in embeds.
+    Handles interactions, specifically button clicks, and delegates to the appropriate handler.
 
-    Args:
-        interaction (discord.Interaction): The interaction received.
-        get_guild_state (function): A function that retrieves the guild's music state.
+    :param interaction: The interaction object representing the event.
+    :param get_guild_state: A function to retrieve the current guild's music state.
     """
     logger.info(f"Interaction received: {interaction.data.get('custom_id')}")
     if interaction.type == discord.InteractionType.component:
-        await interaction.response.defer()
+        try:
+            await interaction.response.defer()
+        except Exception as e:
+            logger.error(f"Failed to defer interaction: {e}")
+            return
         await handle_button_click(interaction, get_guild_state)

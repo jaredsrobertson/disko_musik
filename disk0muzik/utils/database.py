@@ -1,6 +1,7 @@
 import psycopg2
 from psycopg2 import OperationalError
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
+import asyncio
 from disk0muzik.config import (
     POSTGRES_DB,
     POSTGRES_USER,
@@ -8,8 +9,8 @@ from disk0muzik.config import (
     POSTGRES_PASSWORD,
     POSTGRES_PORT,
 )
+import random
 
-# SQL Queries as Constants
 CREATE_SONGS_TABLE = """
 CREATE TABLE IF NOT EXISTS songs (
     spotify_id TEXT PRIMARY KEY,
@@ -68,7 +69,7 @@ SET session_data = EXCLUDED.session_data
 
 SELECT_SONG_BY_SPOTIFY_ID = "SELECT * FROM songs WHERE spotify_id = %s"
 
-SELECT_RANDOM_SONG = "SELECT * FROM songs ORDER BY RANDOM() LIMIT 1"
+SELECT_ALL_SONGS = "SELECT * FROM songs"
 
 SELECT_GUILD_STATE_BY_ID = "SELECT * FROM guild_states WHERE guild_id = %s"
 
@@ -76,6 +77,15 @@ SELECT_USER_SESSION_BY_ID = "SELECT session_data FROM user_sessions WHERE user_i
 
 
 def get_db_connection():
+    """
+    Establishes and returns a connection to the PostgreSQL database.
+
+    Returns:
+        psycopg2.connection: A connection object to the database.
+    
+    Raises:
+        RuntimeError: If the connection to the database fails.
+    """
     try:
         conn = psycopg2.connect(
             dbname=POSTGRES_DB,
@@ -90,6 +100,9 @@ def get_db_connection():
 
 
 def init_db():
+    """
+    Initializes the database by creating the necessary tables and indexes if they do not already exist.
+    """
     conn = get_db_connection()
     if conn:
         try:
@@ -104,6 +117,12 @@ def init_db():
 
 
 def add_song(song: Dict[str, str]):
+    """
+    Adds a song to the songs table in the database. If the song already exists, it updates the existing record.
+
+    Args:
+        song (Dict[str, str]): A dictionary containing the song details.
+    """
     conn = get_db_connection()
     if conn:
         try:
@@ -125,6 +144,15 @@ def add_song(song: Dict[str, str]):
 
 
 def get_song(spotify_id: str) -> Optional[Dict[str, str]]:
+    """
+    Retrieves a song from the database by its Spotify ID.
+
+    Args:
+        spotify_id (str): The Spotify ID of the song.
+
+    Returns:
+        Optional[Dict[str, str]]: A dictionary containing the song details if found, else None.
+    """
     conn = get_db_connection()
     if conn:
         try:
@@ -145,15 +173,21 @@ def get_song(spotify_id: str) -> Optional[Dict[str, str]]:
     return None
 
 
-def get_random_song() -> Optional[Dict[str, str]]:
+def get_all_songs() -> List[Dict[str, str]]:
+    """
+    Retrieves all songs from the database.
+
+    Returns:
+        List[Dict[str, str]]: A list of dictionaries containing song details.
+    """
     conn = get_db_connection()
     if conn:
         try:
             with conn.cursor() as cur:
-                cur.execute(SELECT_RANDOM_SONG)
-                row = cur.fetchone()
-                if row:
-                    return {
+                cur.execute(SELECT_ALL_SONGS)
+                rows = cur.fetchall()
+                return [
+                    {
                         "spotify_id": row[0],
                         "title": row[1],
                         "artist": row[2],
@@ -161,12 +195,82 @@ def get_random_song() -> Optional[Dict[str, str]]:
                         "requester": row[5],
                         "thumbnail": row[3],
                     }
+                    for row in rows
+                ]
         finally:
             conn.close()
-    return None
+    return []
+
+
+class GuildMusicState:
+    """
+    Manages the state for a guild's music session, including the voice client,
+    current queue, current song, and related state information.
+    """
+
+    def __init__(self):
+        """
+        Initializes a new instance of GuildMusicState, including loading and shuffling songs.
+        """
+        self.voice_client = None
+        self.queue = []
+        self.current_song = None
+        self.is_paused = False
+        self.now_playing_message = None
+        self.skip_event = asyncio.Event()
+        self.lock = asyncio.Lock()
+        self.played_songs = []
+        self.unplayed_songs = self.load_and_shuffle_songs()
+
+    def load_and_shuffle_songs(self) -> List[Dict[str, str]]:
+        """
+        Loads all songs from the database and shuffles the order.
+
+        Returns:
+            List[Dict[str, str]]: A shuffled list of song dictionaries.
+        """
+        songs = get_all_songs()
+        random.shuffle(songs)
+        return songs
+
+    def get_next_song(self) -> Optional[Dict[str, str]]:
+        """
+        Retrieves the next song to play, ensuring no repeats until all songs have been played.
+
+        Returns:
+            Optional[Dict[str, str]]: The next song to play, or None if no songs are available.
+        """
+        if not self.unplayed_songs:
+            self.unplayed_songs = self.load_and_shuffle_songs()
+            if (
+                self.played_songs
+                and self.unplayed_songs[0]["spotify_id"]
+                == self.played_songs[-1]["spotify_id"]
+            ):
+                random.shuffle(self.unplayed_songs)
+
+        if self.unplayed_songs:
+            next_song = self.unplayed_songs.pop(0)
+            self.played_songs.append(next_song)
+            return next_song
+        return None
+
+    def reset_playlist(self):
+        """
+        Resets the playlist, allowing all songs to be played again in a new random order.
+        """
+        self.played_songs = []
+        self.unplayed_songs = self.load_and_shuffle_songs()
 
 
 def save_guild_state(guild_id: int, state: Dict[str, Any]):
+    """
+    Saves the current state of a guild's music session to the database.
+
+    Args:
+        guild_id (int): The ID of the guild.
+        state (Dict[str, Any]): The current state of the guild's music session.
+    """
     conn = get_db_connection()
     if conn:
         try:
@@ -187,6 +291,15 @@ def save_guild_state(guild_id: int, state: Dict[str, Any]):
 
 
 def load_guild_state(guild_id: int) -> Optional[Dict[str, Any]]:
+    """
+    Loads the saved state of a guild's music session from the database.
+
+    Args:
+        guild_id (int): The ID of the guild.
+
+    Returns:
+        Optional[Dict[str, Any]]: A dictionary containing the state of the guild's music session if found, else None.
+    """
     conn = get_db_connection()
     if conn:
         try:
@@ -207,6 +320,13 @@ def load_guild_state(guild_id: int) -> Optional[Dict[str, Any]]:
 
 
 def save_user_session(user_id: int, session_data: Dict[str, Any]):
+    """
+    Saves a user's session data to the database.
+
+    Args:
+        user_id (int): The ID of the user.
+        session_data (Dict[str, Any]): The session data to save.
+    """
     conn = get_db_connection()
     if conn:
         try:
@@ -224,6 +344,15 @@ def save_user_session(user_id: int, session_data: Dict[str, Any]):
 
 
 def load_user_session(user_id: int) -> Optional[Dict[str, Any]]:
+    """
+    Loads a user's session data from the database.
+
+    Args:
+        user_id (int): The ID of the user.
+
+    Returns:
+        Optional[Dict[str, Any]]: The session data if found, else None.
+    """
     conn = get_db_connection()
     if conn:
         try:

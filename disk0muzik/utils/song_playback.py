@@ -5,7 +5,7 @@ from discord import FFmpegPCMAudio
 from typing import Dict
 from disk0muzik.state.guild_music_state import GuildMusicState
 from disk0muzik.utils.yt_dlp_helper import extract_youtube_info
-from disk0muzik.utils.database import add_song, get_random_song
+from disk0muzik.utils.database import add_song
 from disk0muzik.utils.embed_helper import (
     create_now_playing_embed,
     create_played_embed,
@@ -31,8 +31,7 @@ async def play_song(
         return
 
     song["requester_id"] = song.get(
-        "requester_id",
-        guild_state.current_song.get("requester_id") if guild_state.current_song else None,
+        "requester_id", guild_state.current_song.get("requester_id") if guild_state.current_song else None
     )
 
     guild_state.current_song = song
@@ -98,11 +97,11 @@ async def handle_song_finished(
     if next_song:
         await play_song(channel, next_song, guild_state)
     else:
-        logger.info("Queue is empty, playing a random song from the database.")
-        db_song = get_random_song()
-        if db_song:
-            db_song["message"] = None
-            await play_song(channel, db_song, guild_state)
+        logger.info("Queue is empty, selecting the next song from the playlist.")
+        next_song = guild_state.get_next_song()
+        if next_song:
+            next_song["message"] = None
+            await play_song(channel, next_song, guild_state)
 
 async def handle_skip_vote(
     interaction: discord.Interaction, guild_state: GuildMusicState
@@ -146,7 +145,10 @@ async def handle_pause_vote(
                 guild_state.current_song,
                 guild_state.current_song["requester"],
             )
-            await guild_state.now_playing_message.edit(embed=embed, view=view)
+            try:
+                await guild_state.now_playing_message.edit(embed=embed, view=view)
+            except discord.HTTPException as e:
+                logger.error(f"Failed to edit message: {e}")
         return
 
     guild_state.add_pause_vote(user_id)
@@ -155,11 +157,15 @@ async def handle_pause_vote(
     await guild_state.now_playing_message.add_reaction(pause_reaction)
 
     if len(guild_state.pause_votes) >= 2:
-        if guild_state.voice_client.is_playing():
-            guild_state.voice_client.pause()
-            guild_state.is_paused = True
-            embed, view = create_paused_embed(
-                guild_state.current_song,
-                guild_state.current_song["requester"],
-            )
-            await guild_state.now_playing_message.edit(embed=embed, view=view)
+        try:
+            if guild_state.voice_client.is_playing():
+                guild_state.voice_client.pause()
+                guild_state.is_paused = True
+                embed, view = create_paused_embed(
+                    guild_state.current_song,
+                    guild_state.current_song["requester"],
+                )
+                await guild_state.now_playing_message.edit(embed=embed, view=view)
+        except Exception as e:
+            logger.error(f"Failed to pause playback on vote: {e}")
+            await interaction.channel.send("An error occurred while processing pause vote.")

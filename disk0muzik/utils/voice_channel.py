@@ -25,5 +25,10 @@ async def join_voice_channel(
         return
 
     channel = message.author.voice.channel
-    guild_state.voice_client = await channel.connect()
+    try:
+        guild_state.voice_client = await channel.connect()
+    except discord.DiscordException as e:
+        logger.error(f"Failed to connect to voice channel: {e}")
+        await message.channel.send("Failed to connect to the voice channel. Please try again later.")
+        return
     logger.info(f"Joined voice channel: {channel}")

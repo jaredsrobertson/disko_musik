@@ -11,11 +11,14 @@ async def process_song_query(
 ) -> Optional[Dict[str, str]]:
     """
     Processes a song query by searching Spotify and YouTube, and returns song details.
-
-    :param query: The query string to search for the song.
-    :param requester: The name of the user requesting the song.
-    :param requester_id: The ID of the user requesting the song.
-    :return: A dictionary containing song details or None if the song could not be found.
+ 
+    Parameters:
+        query (str): The query string to search for the song.
+        requester (str): The name of the user requesting the song.
+        requester_id (int): The ID of the user requesting the song.
+ 
+    Returns:
+        Optional[Dict[str, str]]: A dictionary containing song details or None if the song could not be found.
     """
     try:
         if "youtube.com" in query or "youtu.be" in query:
