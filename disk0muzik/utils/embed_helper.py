@@ -73,6 +73,7 @@ def create_description(song: Dict[str, str]) -> str:
 def create_embed_and_view(
     song: Dict[str, str],
     requester: str,
+    footer_text: str,
     footer_type: str,
     play_pause_label: Optional[str] = None,
 ) -> Tuple[discord.Embed, Optional[View]]:
@@ -81,12 +82,12 @@ def create_embed_and_view(
 
     :param song: Dictionary containing song details.
     :param requester: The user who requested the song.
+    :param footer_text: Text to be displayed in the footer.
     :param footer_type: Type of the footer (now_playing, paused, queued, played).
     :param play_pause_label: Label for the play/pause button.
     :return: The generated embed and view objects.
     """
     description = create_description(song)
-    footer_text = f"{footer_type.replace('_', ' ').title()}\u2800•\u2800@{requester}"
     embed = create_embed(
         description,
         song.get("thumbnail", "default_thumbnail_url"),
@@ -127,7 +128,25 @@ def create_now_playing_embed(
     :param play_pause_label: Label for the play/pause button.
     :return: The generated embed and view objects.
     """
-    return create_embed_and_view(song, requester, "now_playing", play_pause_label)
+    footer_text = f"Now Playing\u2800•\u2800@{requester}"
+    return create_embed_and_view(song, requester, footer_text, "now_playing", play_pause_label)
+
+
+def create_now_playing_from_playlist_embed(
+    song: Dict[str, str],
+    requester: str,
+    play_pause_label: str,
+) -> Tuple[discord.Embed, View]:
+    """
+    Creates an embed for the 'Now Playing from Playlist' state.
+
+    :param song: Dictionary containing song details.
+    :param requester: The user who requested the song.
+    :param play_pause_label: Label for the play/pause button.
+    :return: The generated embed and view objects.
+    """
+    footer_text = f"Now Playing from Playlist\u2800•\u2800@{requester}"
+    return create_embed_and_view(song, requester, footer_text, "now_playing", play_pause_label)
 
 
 def create_paused_embed(
@@ -140,7 +159,8 @@ def create_paused_embed(
     :param requester: The user who requested the song.
     :return: The generated embed and view objects.
     """
-    return create_embed_and_view(song, requester, "paused")
+    footer_text = f"Paused\u2800•\u2800@{requester}"
+    return create_embed_and_view(song, requester, footer_text, "paused")
 
 
 def create_queued_embed(
@@ -153,7 +173,8 @@ def create_queued_embed(
     :param requester: The user who requested the song.
     :return: The generated embed and view objects.
     """
-    embed, _ = create_embed_and_view(song, requester, "queued")
+    footer_text = f"Queued\u2800•\u2800@{requester}"
+    embed, _ = create_embed_and_view(song, requester, footer_text, "queued")
     return embed, View()
 
 
@@ -165,5 +186,19 @@ def create_played_embed(song: Dict[str, str], requester: str) -> discord.Embed:
     :param requester: The user who requested the song.
     :return: The generated embed object.
     """
-    embed, _ = create_embed_and_view(song, requester, "played")
+    footer_text = f"Played\u2800•\u2800@{requester}"
+    embed, _ = create_embed_and_view(song, requester, footer_text, "played")
+    return embed
+
+
+def create_played_from_playlist_embed(song: Dict[str, str], requester: str) -> discord.Embed:
+    """
+    Creates an embed for the 'Played from Playlist' state.
+
+    :param song: Dictionary containing song details.
+    :param requester: The user who requested the song.
+    :return: The generated embed object.
+    """
+    footer_text = f"Played from Playlist\u2800•\u2800@{requester}"
+    embed, _ = create_embed_and_view(song, requester, footer_text, "played")
     return embed

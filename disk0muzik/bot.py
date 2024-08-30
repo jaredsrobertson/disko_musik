@@ -3,7 +3,6 @@ import logging
 import asyncio
 from discord.ext import commands
 from disk0muzik.config import DISCORD_TOKEN
-from disk0muzik.utils.interaction_handler import skip_song
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)

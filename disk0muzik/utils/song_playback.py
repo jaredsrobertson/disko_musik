@@ -10,6 +10,8 @@ from disk0muzik.utils.embed_helper import (
     create_now_playing_embed,
     create_played_embed,
     create_paused_embed,
+    create_now_playing_from_playlist_embed,
+    create_played_from_playlist_embed,
 )
 
 logger = logging.getLogger(__name__)
@@ -55,7 +57,11 @@ async def play_song(
             FFmpegPCMAudio(audio_url, **FFMPEG_OPTIONS),
             after=lambda e: guild_state.skip_event.set(),
         )
-        embed, view = create_now_playing_embed(song, song["requester"], "❚❚")
+
+        if song.get("from_playlist", False):
+            embed, view = create_now_playing_from_playlist_embed(song, song["requester"], "❚❚")
+        else:
+            embed, view = create_now_playing_embed(song, song["requester"], "❚❚")
 
         guild_state.now_playing_message = await (
             song.get("message").edit(embed=embed, view=view)
@@ -82,9 +88,14 @@ async def handle_song_finished(
     """
     logger.info(f"Song finished: {guild_state.current_song}")
     if guild_state.current_song:
-        embed = create_played_embed(guild_state.current_song, guild_state.current_song["requester"])
+        if guild_state.current_song.get("from_playlist", False):
+            embed = create_played_from_playlist_embed(guild_state.current_song, guild_state.current_song["requester"])
+        else:
+            embed = create_played_embed(guild_state.current_song, guild_state.current_song["requester"])
+        
         if guild_state.now_playing_message:
             await guild_state.now_playing_message.edit(embed=embed, view=None)
+        
         add_song(guild_state.current_song)
         guild_state.current_song = None
 
@@ -101,6 +112,7 @@ async def handle_song_finished(
         next_song = guild_state.get_next_song()
         if next_song:
             next_song["message"] = None
+            next_song["from_playlist"] = True  # Mark that this song is from the playlist
             await play_song(channel, next_song, guild_state)
 
 async def handle_skip_vote(
