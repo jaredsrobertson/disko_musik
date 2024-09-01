@@ -9,6 +9,7 @@ FOOTER_IMAGES = {
     "paused": "https://i.ibb.co/2KtfHmw/pause-button.png",
     "queued": "https://i.ibb.co/m937VW1/add.png",
     "played": "https://i.ibb.co/9Wc3xNw/check.png",
+    "skipped": "https://i.ibb.co/9Wc3xNw/check.png",  # Reusing the played image for skipped
 }
 
 EMBED_COLORS = {
@@ -16,6 +17,7 @@ EMBED_COLORS = {
     "paused": 0xFFA500,
     "queued": 0xFFFFFF,
     "played": 0x000000,
+    "skipped": 0xFF0000,  # Red color for skipped
 }
 
 
@@ -31,7 +33,7 @@ def create_embed(
     :param description: The main content of the embed.
     :param thumbnail_url: URL of the thumbnail image.
     :param footer_text: Text to be displayed in the footer.
-    :param footer_type: Type of the footer (now_playing, paused, queued, played).
+    :param footer_type: Type of the footer (now_playing, paused, queued, played, skipped).
     :return: The generated embed object.
     """
     embed = discord.Embed(description=description, color=EMBED_COLORS[footer_type])
@@ -78,12 +80,12 @@ def create_embed_and_view(
     play_pause_label: Optional[str] = None,
 ) -> Tuple[discord.Embed, Optional[View]]:
     """
-    Generates an embed and view for different states like now playing, paused, queued, and played.
+    Generates an embed and view for different states like now playing, paused, queued, played, and skipped.
 
     :param song: Dictionary containing song details.
     :param requester: The user who requested the song.
     :param footer_text: Text to be displayed in the footer.
-    :param footer_type: Type of the footer (now_playing, paused, queued, played).
+    :param footer_type: Type of the footer (now_playing, paused, queued, played, skipped).
     :param play_pause_label: Label for the play/pause button.
     :return: The generated embed and view objects.
     """
@@ -201,4 +203,30 @@ def create_played_from_playlist_embed(song: Dict[str, str], requester: str) -> d
     """
     footer_text = f"Played from Playlist\u2800•\u2800@{requester}"
     embed, _ = create_embed_and_view(song, requester, footer_text, "played")
+    return embed
+
+
+def create_skipped_embed(song: Dict[str, str], requester: str) -> discord.Embed:
+    """
+    Creates an embed for the 'Skipped' state.
+
+    :param song: Dictionary containing song details.
+    :param requester: The user who requested the song.
+    :return: The generated embed object.
+    """
+    footer_text = f"Skipped\u2800•\u2800@{requester}"
+    embed, _ = create_embed_and_view(song, requester, footer_text, "skipped")
+    return embed
+
+
+def create_skipped_from_playlist_embed(song: Dict[str, str], requester: str) -> discord.Embed:
+    """
+    Creates an embed for the 'Skipped from Playlist' state.
+
+    :param song: Dictionary containing song details.
+    :param requester: The user who requested the song.
+    :return: The generated embed object.
+    """
+    footer_text = f"Skipped from Playlist\u2800•\u2800@{requester}"
+    embed, _ = create_embed_and_view(song, requester, footer_text, "skipped")
     return embed

@@ -117,27 +117,26 @@ def init_db():
 
 
 def add_song(song: Dict[str, str]):
-    """
-    Adds a song to the songs table in the database. If the song already exists, it updates the existing record.
-
-    Args:
-        song (Dict[str, str]): A dictionary containing the song details.
-    """
     conn = get_db_connection()
     if conn:
         try:
             with conn.cursor() as cur:
-                cur.execute(
-                    INSERT_OR_UPDATE_SONG,
-                    (
-                        song["spotify_id"],
-                        song["title"],
-                        song["artist"],
-                        song["thumbnail"],
-                        song["youtube_url"],
-                        song["requester"],
-                    ),
-                )
+                existing_song = get_song(song["spotify_id"])
+                
+                # Insert a new song entry if it doesn't exist
+                # or update if youtube_url is missing or broken
+                if not existing_song or not existing_song["youtube_url"]:
+                    cur.execute(
+                        INSERT_OR_UPDATE_SONG,
+                        (
+                            song["spotify_id"],
+                            song["title"],
+                            song["artist"],
+                            song["thumbnail"],
+                            song["youtube_url"],
+                            song["requester"],
+                        ),
+                    )
                 conn.commit()
         finally:
             conn.close()
@@ -224,13 +223,30 @@ class GuildMusicState:
 
     def load_and_shuffle_songs(self) -> List[Dict[str, str]]:
         """
-        Loads all songs from the database and shuffles the order.
+        Loads all songs from the database, shuffles the order, and ensures that the first song 
+        in the shuffled playlist is not the same as the last played song.
 
         Returns:
             List[Dict[str, str]]: A shuffled list of song dictionaries.
         """
         songs = get_all_songs()
+        if not songs:
+            return []
+
+        last_song = self.played_songs[-1] if self.played_songs else None
+
+        # Remove the last played song from the list before shuffling
+        if last_song:
+            songs.remove(last_song)
+
+        # Shuffle the songs
         random.shuffle(songs)
+
+        # Insert the last played song back into the playlist at a random position that is not the start
+        if last_song:
+            insert_position = random.randint(1, len(songs))
+            songs.insert(insert_position, last_song)
+
         return songs
 
     def get_next_song(self) -> Optional[Dict[str, str]]:
@@ -242,12 +258,6 @@ class GuildMusicState:
         """
         if not self.unplayed_songs:
             self.unplayed_songs = self.load_and_shuffle_songs()
-            if (
-                self.played_songs
-                and self.unplayed_songs[0]["spotify_id"]
-                == self.played_songs[-1]["spotify_id"]
-            ):
-                random.shuffle(self.unplayed_songs)
 
         if self.unplayed_songs:
             next_song = self.unplayed_songs.pop(0)

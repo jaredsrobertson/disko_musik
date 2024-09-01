@@ -12,6 +12,8 @@ from disk0muzik.utils.embed_helper import (
     create_paused_embed,
     create_now_playing_from_playlist_embed,
     create_played_from_playlist_embed,
+    create_skipped_embed,
+    create_skipped_from_playlist_embed,
 )
 
 logger = logging.getLogger(__name__)
@@ -49,49 +51,68 @@ async def play_song(
     }
 
     try:
+        # Check if the youtube_url is reachable
         video_info = await asyncio.to_thread(extract_youtube_info, song["youtube_url"])
         audio_url = video_info["audio_url"]
         logger.info(f"Audio URL: {audio_url}")
 
-        guild_state.voice_client.play(
-            FFmpegPCMAudio(audio_url, **FFMPEG_OPTIONS),
-            after=lambda e: guild_state.skip_event.set(),
-        )
-
-        if song.get("from_playlist", False):
-            embed, view = create_now_playing_from_playlist_embed(song, song["requester"], "❚❚")
-        else:
-            embed, view = create_now_playing_embed(song, song["requester"], "❚❚")
-
-        guild_state.now_playing_message = await (
-            song.get("message").edit(embed=embed, view=view)
-            if song.get("message")
-            else channel.send(embed=embed, view=view)
-        )
-        song["message"] = guild_state.now_playing_message
     except Exception as e:
-        logger.error(f"Error playing song: {e}")
-        await channel.send("An error occurred while playing the song.")
-        return
+        # If the youtube_url fails, search for a new one
+        logger.error(f"Error with youtube_url, searching for a new one: {e}")
+        try:
+            video_info = await asyncio.to_thread(extract_youtube_info, song["title"] + " " + song["artist"])
+            song["youtube_url"] = video_info["audio_url"]
+            add_song(song)  # Update the database with the new youtube_url
+            audio_url = video_info["audio_url"]
+            logger.info(f"New Audio URL: {audio_url}")
+        except Exception as inner_e:
+            logger.error(f"Error finding a new youtube_url: {inner_e}")
+            await channel.send("An error occurred while playing the song.")
+            return
+
+    guild_state.voice_client.play(
+        FFmpegPCMAudio(audio_url, **FFMPEG_OPTIONS),
+        after=lambda e: guild_state.skip_event.set(),
+    )
+
+    if song.get("from_playlist", False):
+        embed, view = create_now_playing_from_playlist_embed(song, song["requester"], "❚❚")
+    else:
+        embed, view = create_now_playing_embed(song, song["requester"], "❚❚")
+
+    guild_state.now_playing_message = await (
+        song.get("message").edit(embed=embed, view=view)
+        if song.get("message")
+        else channel.send(embed=embed, view=view)
+    )
+    song["message"] = guild_state.now_playing_message
 
     await guild_state.skip_event.wait()
-    await handle_song_finished(channel, guild_state)
+    await handle_song_finished(channel, guild_state, is_skipped=True)
+
 
 async def handle_song_finished(
-    channel: discord.TextChannel, guild_state: GuildMusicState
+    channel: discord.TextChannel, guild_state: GuildMusicState, is_skipped: bool = False
 ) -> None:
     """
     Handles the cleanup after a song finishes playing and queues the next song.
 
     :param channel: The text channel where the now playing message was sent.
     :param guild_state: The current guild's music state.
+    :param is_skipped: A boolean indicating whether the song was skipped.
     """
     logger.info(f"Song finished: {guild_state.current_song}")
     if guild_state.current_song:
         if guild_state.current_song.get("from_playlist", False):
-            embed = create_played_from_playlist_embed(guild_state.current_song, guild_state.current_song["requester"])
+            if is_skipped:
+                embed = create_skipped_from_playlist_embed(guild_state.current_song, guild_state.current_song["requester"])
+            else:
+                embed = create_played_from_playlist_embed(guild_state.current_song, guild_state.current_song["requester"])
         else:
-            embed = create_played_embed(guild_state.current_song, guild_state.current_song["requester"])
+            if is_skipped:
+                embed = create_skipped_embed(guild_state.current_song, guild_state.current_song["requester"])
+            else:
+                embed = create_played_embed(guild_state.current_song, guild_state.current_song["requester"])
         
         if guild_state.now_playing_message:
             await guild_state.now_playing_message.edit(embed=embed, view=None)
@@ -115,6 +136,7 @@ async def handle_song_finished(
             next_song["from_playlist"] = True  # Mark that this song is from the playlist
             await play_song(channel, next_song, guild_state)
 
+
 async def handle_skip_vote(
     interaction: discord.Interaction, guild_state: GuildMusicState
 ) -> None:
@@ -128,6 +150,7 @@ async def handle_skip_vote(
 
     if user_id == guild_state.current_song["requester_id"]:
         guild_state.skip_event.set()
+        await handle_song_finished(interaction.channel, guild_state, is_skipped=True)
         return
 
     guild_state.add_skip_vote(user_id)
@@ -137,6 +160,8 @@ async def handle_skip_vote(
 
     if len(guild_state.skip_votes) >= 2:
         guild_state.skip_event.set()
+        await handle_song_finished(interaction.channel, guild_state, is_skipped=True)
+
 
 async def handle_pause_vote(
     interaction: discord.Interaction, guild_state: GuildMusicState
